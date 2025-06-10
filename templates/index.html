@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LinkedIn Jobs Scraper</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+    <link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.1/css/buttons.bootstrap5.min.css">
+    <style>
+        .task-card {
+            transition: all 0.3s ease;
+            margin-bottom: 15px;
+        }
+        #loadingSpinner {
+            display: none;
+        }
+        .dataTables_filter input {
+            margin-bottom: 10px;
+        }
+        .table-responsive {
+            overflow-x: auto;
+        }
+        .job-link {
+            max-width: 150px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: inline-block;
+        }
+        .search-param {
+            max-width: 150px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .action-buttons .btn {
+            padding: 0.25rem 0.5rem;
+            font-size: 0.875rem;
+        }
+        .checkbox-column {
+            width: 30px;
+            text-align: center;
+        }
+        .select-all-checkbox {
+            margin-left: 5px;
+        }
+        .dataTables_length {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container py-4">
+        <h1 class="mb-4"><i class="bi bi-linkedin me-2"></i>LinkedIn Jobs Scraper</h1>
+
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-plus-circle me-2"></i>New Scraping Task</h5>
+                <form id="scrapeForm">
+                    <div class="mb-3">
+                        <label for="period" class="form-label"><i class="bi bi-clock me-1"></i>Time Period</label>
+                        <select class="form-select" id="period" required>
+                            <option value="f_TPR=r86400">24h</option>
+                            <option value="f_TPR=r604800">7d</option>
+                            <option value="f_TPR=r2592000">1m</option>
+                            <option value="">Any time</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="keywords" class="form-label"><i class="bi bi-search me-1"></i>Keywords*</label>
+                        <input type="text" class="form-control" id="keywords"
+                               placeholder="e.g. Python Developer OR Data Scientist" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="location" class="form-label"><i class="bi bi-geo-alt me-1"></i>Location</label>
+                        <input type="text" class="form-control" id="location"
+                               placeholder="e.g. Berlin, Germany">
+                    </div>
+                    <div class="mb-3">
+                        <label for="maxJobs" class="form-label"><i class="bi bi-collection me-1"></i>Max Jobs</label>
+                        <input type="number" class="form-control" id="maxJobs"
+                               min="1" max="1000" value="100" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <span id="loadingSpinner" class="spinner-border spinner-border-sm me-1"></span>
+                        <i class="bi bi-play-fill me-1"></i>Start Scraping
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-table me-2"></i>Scraping Results</h5>
+                <div class="d-flex align-items-center">
+                    <button id="deleteSelectedBtn" class="btn btn-sm btn-danger me-2" disabled>
+                        <i class="bi bi-trash me-1"></i>Delete Selected
+                    </button>
+                    <button id="deleteAllBtn" class="btn btn-sm btn-outline-danger me-2">
+                        <i class="bi bi-trash-fill me-1"></i>Delete All
+                    </button>
+
+                    <div class="btn-group ms-2">
+                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button"
+                                data-bs-toggle="dropdown" aria-expanded="false">
+                            Rows: 25
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="#" data-length="10">10</a></li>
+                            <li><a class="dropdown-item" href="#" data-length="25">25</a></li>
+                            <li><a class="dropdown-item" href="#" data-length="50">50</a></li>
+                            <li><a class="dropdown-item" href="#" data-length="100">100</a></li>
+                            <li><a class="dropdown-item" href="#" data-length="-1">All</a></li>
+                        </ul>
+                    </div>
+
+                    <button class="btn btn-sm btn-outline-secondary" onclick="location.reload()">
+                        <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table id="resultsTable" class="table table-striped table-hover" style="width:100%">
+                        <thead>
+                            <tr>
+                                <th class="checkbox-column">
+                                    <input type="checkbox" id="selectAll" class="form-check-input select-all-checkbox">
+                                </th>
+                                <th>Task ID</th>
+                                <th>Created</th>
+                                <th>Search Keywords</th>
+                                <th>Search Location</th>
+                                <th>Title</th>
+                                <th>Company</th>
+                                <th>Job Location</th>
+                                <th>Job Link</th>
+                                <th class="date-column">Posted Date</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for job in all_jobs %}
+                            <tr data-job-link="{{ job.job_link }}">
+                                <td class="checkbox-column">
+                                    <input type="checkbox" class="form-check-input row-checkbox" data-job-link="{{ job.job_link }}">
+                                </td>
+                                <td>{{ job.task_id[:8] }}</td>
+                                <td>{{ job.created_at }}</td>
+                                <td class="search-param" title="{{ job.search_keywords }}">{{ job.search_keywords }}</td>
+                                <td class="search-param" title="{{ job.search_location }}">{{ job.search_location }}</td>
+                                <td>{{ job.title }}</td>
+                                <td>{{ job.company }}</td>
+                                <td>{{ job.location }}</td>
+                                <td>
+                                    <a href="{{ job.job_link }}" target="_blank" class="job-link" title="{{ job.job_link }}">
+                                        {{ job.job_link }}
+                                    </a>
+                                </td>
+                                <td>{{ job.posted_date }}</td> <!-- Added Posted Date column -->
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div class="modal fade" id="confirmModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Confirm Deletion</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p id="confirmMessage">Are you sure you want to delete the selected items?</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" id="confirmDeleteBtn">Delete</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.1/js/dataTables.buttons.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.bootstrap5.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.html5.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.print.min.js"></script>
+
+    <script>
+        $(document).ready(function() {
+            var table = $('#resultsTable').DataTable({
+                dom: 'Bfrtip',
+                buttons: [
+                    {
+                        extend: 'excel',
+                        text: '<i class="bi bi-file-excel me-1"></i>Excel',
+                        className: 'btn btn-sm btn-success',
+                        title: 'LinkedIn_Jobs_Export',
+                        exportOptions: {
+                            columns: ':visible:not(:first-child)'
+                        },
+                        customize: function(xlsx) {
+                            var sheet = xlsx.xl.worksheets['sheet1.xml'];
+                            $('row c[r^="D"], row c[r^="E"]', sheet).attr('s', '2');
+                        }
+                    }
+                ],
+                columnDefs: [
+                    {
+                        targets: 0,
+                        orderable: false,
+                        className: 'checkbox-column',
+                        width: '30px'
+                    },
+                    { targets: 1, width: '80px' },
+                    { targets: 2, width: '80px' },
+                    { targets: [3, 4], width: '150px' },
+                    { targets: 8, width: '300px' },
+                    {
+                        targets: 9, // Posted Date column
+                        render: function(data, type, row) {
+                            if (type === 'display') {
+                                if (data) {
+                                    // Format the date for display
+                                    return new Date(data).toLocaleDateString();
+                                }
+                                return 'N/A';
+                            }
+                            return data;
+                        }
+                    }
+                ],
+                pageLength: 25,
+                lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
+                responsive: true,
+                order: [[9, 'desc']]
+            });
+
+            // Обработчик для чекбокса "Выбрать все"
+            $('#selectAll').change(function() {
+                var isChecked = $(this).prop('checked');
+                $('.row-checkbox').prop('checked', isChecked);
+                updateDeleteButtonState();
+            });
+
+            // Обработчик для чекбоксов строк
+            $('#resultsTable').on('change', '.row-checkbox', function() {
+                // Если сняли выделение с одной строки, снимаем и с "Выбрать все"
+                if (!$(this).prop('checked') && $('#selectAll').prop('checked')) {
+                    $('#selectAll').prop('checked', false);
+                }
+                updateDeleteButtonState();
+            });
+
+            // Обновление состояния кнопки удаления
+            function updateDeleteButtonState() {
+                var anyChecked = $('.row-checkbox:checked').length > 0;
+                $('#deleteSelectedBtn').prop('disabled', !anyChecked);
+            }
+
+            // Удаление выбранных строк
+            $('#deleteSelectedBtn').click(function() {
+                var selectedCount = $('.row-checkbox:checked').length;
+                if (selectedCount === 0) {
+                    alert('Please select at least one row to delete');
+                    return;
+                }
+
+                $('#confirmMessage').text(`Are you sure you want to delete ${selectedCount} selected items?`);
+                $('#confirmModal').modal('show');
+
+                $('#confirmDeleteBtn').off('click').on('click', function() {
+                    var jobLinks = [];
+                    $('.row-checkbox:checked').each(function() {
+                        jobLinks.push($(this).data('job-link'));
+                        $(this).closest('tr').remove();
+                    });
+
+                    deleteJobs(jobLinks);
+                    $('#confirmModal').modal('hide');
+                    $('#selectAll').prop('checked', false);
+                    updateDeleteButtonState();
+                });
+            });
+
+            // Удаление всех строк
+            $('#deleteAllBtn').click(function() {
+                var totalCount = $('#resultsTable tbody tr').length;
+                if (totalCount === 0) {
+                    alert('No items to delete');
+                    return;
+                }
+
+                $('#confirmMessage').text(`Are you sure you want to delete ALL ${totalCount} items?`);
+                $('#confirmModal').modal('show');
+
+                $('#confirmDeleteBtn').off('click').on('click', function() {
+                    var jobLinks = [];
+                    $('#resultsTable tbody tr').each(function() {
+                        jobLinks.push($(this).data('job-link'));
+                    });
+
+                    deleteJobs(jobLinks);
+                    $('#confirmModal').modal('hide');
+                    $('#selectAll').prop('checked', false);
+                    updateDeleteButtonState();
+                });
+            });
+
+            // Обработчик для выбора количества строк
+            $('.dropdown-menu').on('click', 'a', function(e) {
+                e.preventDefault();
+                var length = $(this).data('length');
+                table.page.len(length).draw();
+                $(this).closest('.btn-group').find('button').text('Rows: ' + (length === -1 ? 'All' : length));
+            });
+
+            // Scrape form submission
+            document.getElementById('scrapeForm').addEventListener('submit', async function(e) {
+                e.preventDefault();
+
+                const btn = e.target.querySelector('button[type="submit"]');
+                const spinner = document.getElementById('loadingSpinner');
+
+                btn.disabled = true;
+                spinner.style.display = 'inline-block';
+
+                const keywords = document.getElementById('keywords').value;
+                const location = document.getElementById('location').value;
+                const maxJobs = document.getElementById('maxJobs').value;
+                const period = document.getElementById('period').value;
+
+                try {
+                    const response = await fetch('/api/scrape', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            keywords,
+                            location,
+                            max_jobs: parseInt(maxJobs),
+                            period
+                        })
+                    });
+
+                    const task = await response.json();
+                    await pollTaskStatus(task.id);
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert('Failed to start scraping task');
+                } finally {
+                    btn.disabled = false;
+                    spinner.style.display = 'none';
+                }
+            });
+
+            async function pollTaskStatus(taskId) {
+                const response = await fetch(`/api/tasks/${taskId}`);
+                const task = await response.json();
+
+                if (task.status === 'pending' || task.status === 'in_progress') {
+                    setTimeout(() => pollTaskStatus(taskId), 2000);
+                } else {
+                    location.reload();
+                }
+            }
+
+            async function deleteJobs(jobLinks) {
+                try {
+                    const response = await fetch('/api/jobs/delete', {
+                        method: 'DELETE',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(jobLinks)
+                    });
+
+                    const result = await response.json();
+                    if (result.deleted_count > 0) {
+                        alert(`Successfully deleted ${result.deleted_count} job(s)`);
+                        location.reload();
+                    } else {
+                        alert('No jobs were deleted');
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert('Failed to delete job(s)');
+                }
+            }
+        });
+    </script>
+</body>
+</html>
