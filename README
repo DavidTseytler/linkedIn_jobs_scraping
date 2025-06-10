@@ -11,7 +11,7 @@ API для парсинга вакансий с LinkedIn с использова
     Веб-интерфейс для просмотра результатов
 🚀 Установка
     Клонируйте репозиторий:
-git clone https://github.com/yourusername/linkedin-jobs-scraper.git
+git clone https://github.com/DavidTseytler/linkedin-jobs-scraper.git
 cd linkedin-jobs-scraper
     Установите зависимости:
 pip install -r requirements.txt
