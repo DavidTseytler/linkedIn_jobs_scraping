@@ -20,9 +20,8 @@ import io
 import pandas as pd
 
 PROXIES = [
-    "Cn0Am4:Mhq30q@45.145.58.212:8000",
-    "HQTAwK:DejHvt@213.232.68.235:8000",
-    "rpbV2j:ndxG2E@89.185.77.132:8000",
+    "xxxx:xxxx@xx.xxx.x.xxx:xxxx",
+
 ]
 PERIOD_OPTIONS = {
     "24h": "f_TPR=r86400",        # Last 24 hours
