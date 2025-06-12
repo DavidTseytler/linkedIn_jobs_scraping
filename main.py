@@ -278,10 +278,11 @@ async def run_scraper_task(task_id: str, request: ScrapeRequest):
 
 
 
-        for start in range(0, request.max_pages * 10, 10):
+        for start in range(0, 1000, 10):  # Note the added step=10
             try:
-
-                url = f"https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?{request.period}&keywords={quote(request.keywords)}&location={quote(request.location)}&start={start}"
+                url = f"https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?{period_filter}keywords={quote(request.keywords)}&location={quote(request.location)}&start={start}"
+                print(url)
+                logger.debug(f"Fetching URL: {url}")}"
                 print("Final URL:", url)
                 logger.debug(f"Fetching URL: {url}")
 
