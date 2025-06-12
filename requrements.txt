@@ -11,4 +11,4 @@ openpyxl==3.1.2
 xlsxwriter==3.2.0
 lxml==5.1.0
 Jinja2==3.1.3
-python-dateutil==2.8.2  # Требуется для pandas
+python-dateutil==2.8.2
