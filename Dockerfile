@@ -4,7 +4,6 @@ WORKDIR /app
 
 # Копируем только нужные файлы
 COPY main.py .
-COPY linkedin_job_test.py .
 COPY requirements.txt .
 COPY templates/ ./templates/
 
