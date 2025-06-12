@@ -282,8 +282,6 @@ async def run_scraper_task(task_id: str, request: ScrapeRequest):
             try:
                 url = f"https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?{period_filter}keywords={quote(request.keywords)}&location={quote(request.location)}&start={start}"
                 print(url)
-                logger.debug(f"Fetching URL: {url}")}"
-                print("Final URL:", url)
                 logger.debug(f"Fetching URL: {url}")
 
                 session = get_session()
