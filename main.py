@@ -20,7 +20,8 @@ import io
 import pandas as pd
 
 PROXIES = [
-    "xxxx:xxxx@xx.xxx.x.xxx:xxxx",
+        "Cn0Am4:Mhq30q@45.145.58.212:8000",
+        "HQTAwK:DejHvt@213.232.68.235:8000",
 
 ]
 PERIOD_OPTIONS = {
