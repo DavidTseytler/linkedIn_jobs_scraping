@@ -107,7 +107,8 @@ class LinkedInScraper:
                             location_text = card.find("span", class_="job-search-card__location").get_text(strip=True)
                             link = card.find("a", class_="base-card__full-link")["href"].split("?")[0]
                             date = card.find("time", class_="job-search-card__listdate")
-                            date = date.get_text(strip=True) if date else "N/A"
+                            if date:
+                                date=date.get(datetime)
                             if not any(job.job_link == link for job in jobs):
                                 jobs.append(JobData(title, company, location_text, link, date, url))
                                 if len(jobs) >= max_jobs: break
