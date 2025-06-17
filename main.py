@@ -26,25 +26,27 @@ logger = logging.getLogger(__name__)
 # Модели данных
 @dataclass
 class JobData:
-    title: str;
-    company: str;
-    location: str;
-    job_link: str;
-    posted_date: str;
+    title: str
+    company: str
+    location: str
+    job_link: str
+    posted_date: str
     url: str
 
 
 class ScraperConfig:
     BASE_URL = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
-    JOBS_PER_PAGE = 10;
-    MIN_DELAY = 3;
-    MAX_DELAY = 7;
-    PROXY_TIMEOUT = 30;
-    MAX_RETRIES = 3;
+    JOBS_PER_PAGE = 10
+    MIN_DELAY = 3
+    MAX_DELAY = 7
+    PROXY_TIMEOUT = 30
+    MAX_RETRIES = 3
     RATE_LIMIT_DELAY = 30
     HEADERS = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9", "Accept-Encoding": "gzip, deflate, br", "Connection": "keep-alive",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
     }
 
 
@@ -58,14 +60,14 @@ class LinkedInScraper:
         session = requests.Session()
         retry = Retry(total=ScraperConfig.MAX_RETRIES, backoff_factor=0.5, status_forcelist=[429, 500, 502, 503, 504])
         adapter = HTTPAdapter(max_retries=retry)
-        session.mount("http://", adapter);
+        session.mount("http://", adapter)
         session.mount("https://", adapter)
         return session
 
     def _init_proxies(self) -> List[Dict[str, str]]:
         proxy_list = [
-            "Cn0Am4:Mhq30q@45.145.58.212:8000",
-            "HQTAwK:DejHvt@213.232.68.235:8000",
+            "cbVdeq:qzHhPk@195.158.194.111:8000",
+            "cbVdeq:qzHhPk@195.158.195.84:8000",
             "rpbV2j:ndxG2E@89.185.77.132:8000",
         ]
         return [{"http": f"http://{proxy}", "https": f"http://{proxy}"} for proxy in proxy_list]
@@ -78,13 +80,18 @@ class LinkedInScraper:
     def _fetch_page(self, url: str) -> Optional[BeautifulSoup]:
         for attempt in range(ScraperConfig.MAX_RETRIES):
             try:
-                response = self.session.get(url, headers=ScraperConfig.HEADERS,
-                                            proxies=self._get_proxy(), timeout=ScraperConfig.PROXY_TIMEOUT)
+                response = self.session.get(
+                    url,
+                    headers=ScraperConfig.HEADERS,
+                    proxies=self._get_proxy(),
+                    timeout=ScraperConfig.PROXY_TIMEOUT
+                )
                 if response.status_code == 429:
                     logger.info(f"Rate limit hit. Waiting {ScraperConfig.RATE_LIMIT_DELAY} sec...")
-                    time.sleep(ScraperConfig.RATE_LIMIT_DELAY);
+                    time.sleep(ScraperConfig.RATE_LIMIT_DELAY)
                     continue
-                if response.status_code != 200: raise Exception(f"HTTP Error {response.status_code}")
+                if response.status_code != 200:
+                    raise Exception(f"HTTP Error {response.status_code}")
                 return BeautifulSoup(response.text, "lxml")
             except Exception as e:
                 logger.error(f"Error (attempt {attempt + 1}): {str(e)}")
@@ -92,12 +99,14 @@ class LinkedInScraper:
         return None
 
     def scrape_jobs(self, keyword: str, location: str, max_jobs: int = 1000) -> List[JobData]:
-        jobs = [];
-        start = 0;
+        jobs = []
+        start = 0
         encoded_location = quote(location)
+
         while len(jobs) < max_jobs and start < 1000:
             url = f"{ScraperConfig.BASE_URL}?keywords={quote(keyword)}&location={encoded_location}&start={start}"
             logger.info(f"Fetching: {url}")
+
             if soup := self._fetch_page(url):
                 if cards := soup.find_all("div", class_="base-card"):
                     for card in cards:
@@ -108,10 +117,12 @@ class LinkedInScraper:
                             link = card.find("a", class_="base-card__full-link")["href"].split("?")[0]
                             date = card.find("time", class_="job-search-card__listdate")
                             if date:
-                                date=date.get("datetime")
+                                date = date.get("datetime")
+
                             if not any(job.job_link == link for job in jobs):
                                 jobs.append(JobData(title, company, location_text, link, date, url))
-                                if len(jobs) >= max_jobs: break
+                                if len(jobs) >= max_jobs:
+                                    break
                         except Exception as e:
                             logger.error(f"Error processing job: {str(e)}")
                     start += ScraperConfig.JOBS_PER_PAGE
@@ -120,50 +131,79 @@ class LinkedInScraper:
 
 
 # FastAPI приложение
-app = FastAPI(title="LinkedIn Jobs Scraper API", version="1.0.0")
+app = FastAPI(
+    title="LinkedIn Jobs Scraper API",
+    description="API для парсинга вакансий с LinkedIn с возможностью исключения компаний",
+    version="2.0.0"
+)
 templates = Jinja2Templates(directory="templates")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"],
-                   allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
 
 
 # Модели Pydantic
 class ScrapeRequest(BaseModel):
-    keywords: str;
-    location: str = "";
+    keywords: str
+    location: str = ""
     max_jobs: int = 1000
+    exclude_companies: List[str] = []
 
 
 class ScrapeTask(BaseModel):
-    id: str;
-    status: str;
-    created_at: str;
+    id: str
+    status: str
+    created_at: str
     finished_at: Optional[str] = None
-    result_count: Optional[int] = None;
+    result_count: Optional[int] = None
     keywords: Optional[str] = None
-    location: Optional[str] = None;
+    location: Optional[str] = None
     max_jobs: Optional[int] = None
+    exclude_companies: Optional[List[str]] = None
 
 
 class JobResult(BaseModel):
-    task_id: str;
-    created_at: str;
-    search_keywords: str;
+    task_id: str
+    created_at: str
+    search_keywords: str
     search_location: str
-    title: str;
-    company: str;
-    location: str;
-    job_link: str;
+    title: str
+    company: str
+    location: str
+    job_link: str
     posted_date: str
 
 
 # Инициализация БД
 def init_db():
     with sqlite3.connect('scraper.db') as conn:
+        # Создаем таблицу, если она не существует
         conn.execute("""
             CREATE TABLE IF NOT EXISTS tasks (
-                id TEXT PRIMARY KEY, status TEXT, created_at TEXT, finished_at TEXT,
-                result_count INTEGER, result_json TEXT, keywords TEXT, location TEXT, max_jobs INTEGER
+                id TEXT PRIMARY KEY,
+                status TEXT,
+                created_at TEXT,
+                finished_at TEXT,
+                result_count INTEGER,
+                result_json TEXT,
+                keywords TEXT,
+                location TEXT,
+                max_jobs INTEGER,
+                exclude_companies TEXT
             )""")
+
+        # Проверяем существование столбца exclude_companies
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(tasks)")
+        columns = [column[1] for column in cursor.fetchall()]
+        if 'exclude_companies' not in columns:
+            cursor.execute("ALTER TABLE tasks ADD COLUMN exclude_companies TEXT")
+
+        conn.commit()
     logger.info("Database initialized")
 
 
@@ -182,17 +222,35 @@ def get_db_connection():
 def update_task_status(task_id: str, status: str):
     with get_db_connection() as conn:
         conn.execute("UPDATE tasks SET status = ? WHERE id = ?", (status, task_id))
+        conn.commit()
     logger.info(f"Updated task {task_id} status to {status}")
 
 
-def save_results(task_id: str, jobs: list):
+def save_results(task_id: str, jobs: list, exclude_companies: List[str] = None):
+    result_data = {
+        "jobs": [j.__dict__ for j in jobs],
+        "exclude_companies": exclude_companies or []
+    }
+
     with get_db_connection() as conn:
         conn.execute(
-            """UPDATE tasks SET status=?, finished_at=?, result_count=?, result_json=? 
+            """UPDATE tasks SET 
+            status=?, 
+            finished_at=?, 
+            result_count=?, 
+            result_json=?,
+            exclude_companies=?
             WHERE id=?""",
-            ("completed", datetime.now().isoformat(), len(jobs), json.dumps([j.__dict__ for j in jobs]), task_id)
+            (
+                "completed",
+                datetime.now().isoformat(),
+                len(jobs),
+                json.dumps(result_data),
+                json.dumps(exclude_companies or []),
+                task_id
+            )
         )
-        conn.commit()  # Критически важно!
+        conn.commit()
     logger.info(f"Results saved for {task_id}")
 
 
@@ -201,25 +259,76 @@ def save_results(task_id: str, jobs: list):
 async def read_root(request: Request):
     if not os.path.exists("templates/index.html"):
         raise HTTPException(status_code=500, detail="index.html not found")
-    return templates.TemplateResponse("index.html", {"request": request, "all_jobs": await get_all_job_results()})
+
+    # Получаем сохраненные исключенные компании из куки или query string
+    exclude_companies = request.cookies.get("excluded_companies", "")
+    query_exclude = request.query_params.get("exclude_companies", "")
+    exclude_companies = query_exclude if query_exclude else exclude_companies
+
+    exclude_list = [c.strip() for c in exclude_companies.split(",") if c.strip()]
+
+    response = templates.TemplateResponse(
+        "index.html",
+        {
+            "request": request,
+            "all_jobs": await get_all_job_results(exclude_list),
+            "exclude_companies": exclude_companies
+        }
+    )
+
+    # Устанавливаем куку с исключенными компаниями
+    if exclude_companies:
+        response.set_cookie(key="excluded_companies", value=exclude_companies)
+
+    return response
 
 
-async def get_all_job_results() -> List[Dict[str, Any]]:
+async def get_all_job_results(exclude_companies: List[str] = None) -> List[Dict[str, Any]]:
     with get_db_connection() as conn:
-        tasks = conn.execute("""SELECT id, created_at, result_json, keywords, location FROM tasks 
-                             WHERE (status='completed' OR status='partial') AND result_json IS NOT NULL""").fetchall()
+        cursor = conn.cursor()
+        cursor.execute(
+            """SELECT id, created_at, result_json, keywords, location, exclude_companies 
+            FROM tasks WHERE (status = 'completed' OR status = 'partial') 
+            AND result_json IS NOT NULL"""
+        )
+        tasks = cursor.fetchall()
 
-    all_jobs = [];
+    all_jobs = []
     seen_links = set()
-    for task_id, created_at, result_json, search_keywords, search_location in tasks:
+
+    for task in tasks:
+        task_id, created_at, result_json, search_keywords, search_location, task_exclude = task
         try:
-            for job in json.loads(result_json):
-                if (link := job.get('job_link')) and link not in seen_links:
-                    seen_links.add(link)
-                    all_jobs.append({**job, 'task_id': task_id, 'created_at': created_at,
-                                     'search_keywords': search_keywords, 'search_location': search_location})
+            # Получаем исключенные компании для каждой задачи
+            task_exclude_list = json.loads(task_exclude) if task_exclude else []
+            combined_exclude = list(set((exclude_companies or []) + task_exclude_list))
+
+            data = json.loads(result_json)
+            jobs = data.get("jobs", [])
+
+            for job in jobs:
+                full_link = job.get('job_link')
+                if not full_link:
+                    continue
+
+                if full_link in seen_links:
+                    continue
+                seen_links.add(full_link)
+
+                # Фильтрация по исключенным компаниям
+                if combined_exclude and job.get('company', '').lower() in [
+                    c.lower() for c in combined_exclude
+                ]:
+                    continue
+
+                job['task_id'] = task_id
+                job['created_at'] = created_at
+                job['search_keywords'] = search_keywords
+                job['search_location'] = search_location
+                all_jobs.append(job)
         except json.JSONDecodeError:
             logger.error(f"Invalid JSON in task {task_id}")
+
     return all_jobs
 
 
@@ -227,63 +336,143 @@ async def get_all_job_results() -> List[Dict[str, Any]]:
 async def create_scrape_task(request: ScrapeRequest, background_tasks: BackgroundTasks):
     task_id = str(uuid.uuid4())
     created_at = datetime.now().isoformat()
+
     with get_db_connection() as conn:
         conn.execute(
-            """INSERT INTO tasks (id, status, created_at, keywords, location, max_jobs) 
-            VALUES (?, ?, ?, ?, ?, ?)""",
-            (task_id, "pending", created_at, request.keywords, request.location, request.max_jobs)
+            """INSERT INTO tasks 
+            (id, status, created_at, keywords, location, max_jobs, exclude_companies) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                task_id,
+                "pending",
+                created_at,
+                request.keywords,
+                request.location,
+                request.max_jobs,
+                json.dumps(request.exclude_companies)
+            )
         )
-        conn.commit()  # Явное подтверждение транзакции
+        conn.commit()
+
     logger.info(f"Task created: {task_id}")
     background_tasks.add_task(run_scraper_task, task_id, request)
-    return {"id": task_id, "status": "pending", "created_at": created_at, **request.dict()}
+
+    return {
+        "id": task_id,
+        "status": "pending",
+        "created_at": created_at,
+        **request.dict()
+    }
 
 
 async def run_scraper_task(task_id: str, request: ScrapeRequest):
     try:
-        logger.info(f"Starting task {task_id} for {request.keywords} in {request.location}")
+        logger.info(f"Starting scraping task {task_id} for {request.keywords} in {request.location}")
         update_task_status(task_id, "in_progress")
-        jobs = LinkedInScraper().scrape_jobs(request.keywords, request.location, request.max_jobs)
-        save_results(task_id, jobs)
-        logger.info(f"Finished task {task_id}, found {len(jobs)} jobs")
+
+        scraper = LinkedInScraper()
+        jobs = scraper.scrape_jobs(request.keywords, request.location, request.max_jobs)
+
+        # Фильтрация по исключенным компаниям
+        if request.exclude_companies:
+            jobs = [
+                job for job in jobs
+                if job.company.lower() not in [
+                    c.lower() for c in request.exclude_companies
+                ]
+            ]
+
+        save_results(task_id, jobs, request.exclude_companies)
+        logger.info(f"Finished scraping task {task_id}, found {len(jobs)} jobs (after excluding companies)")
+
     except Exception as e:
         logger.error(f"Error in task {task_id}: {str(e)}", exc_info=True)
         update_task_status(task_id, "failed")
+        raise
 
 
 @app.get("/api/tasks", response_model=List[ScrapeTask])
 async def get_all_tasks():
     with get_db_connection() as conn:
-        return [dict(
-            zip(['id', 'status', 'created_at', 'finished_at', 'result_count', 'keywords', 'location', 'max_jobs'], row))
-                for row in conn.execute("""SELECT id, status, created_at, finished_at, result_count, 
-                                         keywords, location, max_jobs FROM tasks ORDER BY created_at DESC""")]
+        return [
+            {
+                "id": row[0],
+                "status": row[1],
+                "created_at": row[2],
+                "finished_at": row[3],
+                "result_count": row[4],
+                "keywords": row[5],
+                "location": row[6],
+                "max_jobs": row[7],
+                "exclude_companies": json.loads(row[8]) if row[8] else []
+            }
+            for row in conn.execute("""
+                SELECT id, status, created_at, finished_at, result_count, 
+                       keywords, location, max_jobs, exclude_companies 
+                FROM tasks ORDER BY created_at DESC
+            """)
+        ]
 
 
 @app.get("/api/tasks/{task_id}", response_model=ScrapeTask)
 async def get_task_status(task_id: str):
-
-    logger.info(f"Requested task ID: {task_id}")
     with get_db_connection() as conn:
-        tasks = conn.execute("SELECT id FROM tasks").fetchall()
-        logger.info(f"All task IDs in DB: {[t[0] for t in tasks]}")
-
+        if task := conn.execute(
+                """SELECT id, status, created_at, finished_at, result_count, 
+                          keywords, location, max_jobs, exclude_companies 
+                   FROM tasks WHERE id=?""",
+                (task_id,)
+        ).fetchone():
+            return {
+                "id": task[0],
+                "status": task[1],
+                "created_at": task[2],
+                "finished_at": task[3],
+                "result_count": task[4],
+                "keywords": task[5],
+                "location": task[6],
+                "max_jobs": task[7],
+                "exclude_companies": json.loads(task[8]) if task[8] else []
+            }
 
     raise HTTPException(status_code=404, detail="Task not found")
+
+
+@app.get("/api/all-results-filtered")
+async def get_all_results_filtered(exclude_companies: str = ""):
+    """Получает все результаты, исключая указанные компании (через запятую)"""
+    exclude_list = [c.strip() for c in exclude_companies.split(",") if c.strip()]
+    jobs = await get_all_job_results(exclude_list)
+    return JSONResponse(content=jobs)
 
 
 @app.get("/api/tasks/{task_id}/results")
 async def get_task_results(task_id: str):
     with get_db_connection() as conn:
         if result := conn.execute(
-                "SELECT result_json, keywords, location FROM tasks WHERE id=? AND (status='completed' OR status='partial')",
-                (task_id,)).fetchone():
+                """SELECT result_json, keywords, location 
+                   FROM tasks 
+                   WHERE id=? AND (status='completed' OR status='partial')""",
+                (task_id,)
+        ).fetchone():
             try:
+                data = json.loads(result[0])
+                jobs = data.get("jobs", [])
+
                 return JSONResponse(
-                    content=[{**job, 'task_id': task_id, 'search_keywords': result[1], 'search_location': result[2]}
-                             for job in json.loads(result[0])])
+                    content=[
+                        {
+                            **job,
+                            'task_id': task_id,
+                            'search_keywords': result[1],
+                            'search_location': result[2]
+                        }
+                        for job in jobs
+                    ]
+                )
             except json.JSONDecodeError:
                 raise HTTPException(status_code=500, detail="Invalid results data")
+
     raise HTTPException(status_code=404, detail="Results not available")
 
 
@@ -293,27 +482,59 @@ async def get_all_results():
 
 
 @app.get("/api/export-excel")
-async def export_to_excel():
-    jobs = await get_all_job_results()
-    if not jobs: raise HTTPException(status_code=404, detail="No jobs found to export")
+async def export_to_excel(exclude_companies: str = ""):
+    exclude_list = [c.strip() for c in exclude_companies.split(",") if c.strip()]
+    jobs = await get_all_job_results(exclude_list)
 
-    df = pd.DataFrame(jobs)[['task_id', 'created_at', 'search_keywords', 'search_location',
-                             'title', 'company', 'location', 'job_link', 'posted_date']]
-    df.columns = ['Task ID', 'Task Created', 'Search Keywords', 'Search Location',
-                  'Job Title', 'Company', 'Job Location', 'Job Link', 'Posted Date']
+    if not jobs:
+        raise HTTPException(status_code=404, detail="No jobs found to export")
+
+    df = pd.DataFrame(jobs)[[
+        'task_id', 'created_at', 'search_keywords', 'search_location',
+        'title', 'company', 'location', 'job_link', 'posted_date'
+    ]]
+    df.columns = [
+        'Task ID', 'Task Created', 'Search Keywords', 'Search Location',
+        'Job Title', 'Company', 'Job Location', 'Job Link', 'Posted Date'
+    ]
 
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df.to_excel(writer, sheet_name='LinkedIn Jobs', index=False)
         worksheet = writer.sheets['LinkedIn Jobs']
-        worksheet.set_column('H:H', 100, writer.book.add_format({'num_format': '@'}))
-        for col, width in zip('ABCDEFGI', [36, 20, 30, 25, 30, 25, 25, 15]): worksheet.set_column(f'{col}:{col}', width)
+
+        # Форматирование
+        url_format = writer.book.add_format({'color': 'blue', 'underline': 1})
+        text_format = writer.book.add_format({'num_format': '@'})
+
+        worksheet.set_column('A:A', 36)
+        worksheet.set_column('B:B', 20)
+        worksheet.set_column('C:C', 30)
+        worksheet.set_column('D:D', 25)
+        worksheet.set_column('E:E', 30)
+        worksheet.set_column('F:F', 25)
+        worksheet.set_column('G:G', 25)
+        worksheet.set_column('H:H', 100, text_format)
+        worksheet.set_column('I:I', 15)
+
+        # Добавляем гиперссылки
+        for row_num, url in enumerate(df['Job Link'], start=1):
+            if pd.notna(url):
+                worksheet.write_url(
+                    f'H{row_num + 1}',
+                    url,
+                    string=url,
+                    cell_format=url_format
+                )
 
     output.seek(0)
-    return StreamingResponse(output, headers={
-        'Content-Disposition': 'attachment; filename="linkedin_jobs_export.xlsx"',
-        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    })
+    return StreamingResponse(
+        output,
+        headers={
+            'Content-Disposition': f'attachment; filename="linkedin_jobs_export.xlsx"',
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        }
+    )
 
 
 @app.delete("/api/jobs/delete")
@@ -321,19 +542,37 @@ async def delete_jobs(job_links: List[str]):
     with get_db_connection() as conn:
         deleted_count = 0
         for task_id, result_json in conn.execute(
-                "SELECT id, result_json FROM tasks WHERE (status='completed' OR status='partial') AND result_json IS NOT NULL"):
+                """SELECT id, result_json 
+                   FROM tasks 
+                   WHERE (status='completed' OR status='partial') 
+                   AND result_json IS NOT NULL"""
+        ):
             try:
-                jobs = json.loads(result_json)
-                updated_jobs = [j for j in jobs if j.get('job_link') not in job_links
-                                and j.get('link') not in job_links and j.get('url') not in job_links]
+                data = json.loads(result_json)
+                jobs = data.get("jobs", [])
+                updated_jobs = [
+                    j for j in jobs
+                    if j.get('job_link') not in job_links
+                       and j.get('link') not in job_links
+                       and j.get('url') not in job_links
+                ]
+
                 if len(updated_jobs) < len(jobs):
                     deleted_count += len(jobs) - len(updated_jobs)
-                    conn.execute("UPDATE tasks SET result_json=?, result_count=? WHERE id=?",
-                                 (json.dumps(updated_jobs), len(updated_jobs), task_id))
+                    data["jobs"] = updated_jobs
+                    conn.execute(
+                        """UPDATE tasks 
+                        SET result_json=?, result_count=? 
+                        WHERE id=?""",
+                        (json.dumps(data), len(updated_jobs), task_id))
             except json.JSONDecodeError:
                 logger.error(f"Invalid JSON in task {task_id}")
+
         conn.commit()
-        return {"message": f"Deleted {deleted_count} jobs", "deleted_count": deleted_count}
+        return {
+            "message": f"Deleted {deleted_count} jobs",
+            "deleted_count": deleted_count
+        }
 
 
 if __name__ == "__main__":
