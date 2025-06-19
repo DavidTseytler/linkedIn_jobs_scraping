@@ -66,9 +66,11 @@ class LinkedInScraper:
 
     def _init_proxies(self) -> List[Dict[str, str]]:
         proxy_list = [
-            "cbVdeq:qzHhPk@195.158.194.111:8000",
-            "cbVdeq:qzHhPk@195.158.195.84:8000",
-            "rpbV2j:ndxG2E@89.185.77.132:8000",
+"0Ze9mr:eY1xGU@45.146.182.246:8000",
+"zfnCYU:MussfC@45.92.20.52:8000",
+"zfnCYU:MussfC@45.92.20.102:8000",
+"QWSFvo:7RRd0m@168.81.236.50:8000",
+"QWSFvo:7RRd0m@168.81.237.188:8000",
         ]
         return [{"http": f"http://{proxy}", "https": f"http://{proxy}"} for proxy in proxy_list]
 
