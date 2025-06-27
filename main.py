@@ -104,13 +104,26 @@ class LinkedInScraper:
         jobs = []
         start = 0
         encoded_location = quote(location)
+        seen_urls = set()  # Для отслеживания уже обработанных URL
+        retry_counts = {}  # Для подсчета повторных запросов
 
         while len(jobs) < max_jobs and start < 1000:
             url = f"{ScraperConfig.BASE_URL}?keywords={quote(keyword)}&location={encoded_location}&start={start}"
-            logger.info(f"Fetching: {url}")
+
+            # Проверяем, не превысили ли лимит повторных запросов
+            if url in retry_counts:
+                retry_counts[url] += 1
+                if retry_counts[url] > 3:
+                    logger.warning(f"Too many retries for URL: {url}. Breaking the loop.")
+                    break
+            else:
+                retry_counts[url] = 1
+
+            logger.info(f"Fetching: {url} (attempt {retry_counts[url]})")
 
             if soup := self._fetch_page(url):
                 if cards := soup.find_all("div", class_="base-card"):
+                    new_jobs_count = 0
                     for card in cards:
                         try:
                             title = card.find("h3", class_="base-search-card__title").get_text(strip=True)
@@ -121,14 +134,29 @@ class LinkedInScraper:
                             if date:
                                 date = date.get("datetime")
 
-                            if not any(job.job_link == link for job in jobs):
+                            if link not in seen_urls:
+                                seen_urls.add(link)
                                 jobs.append(JobData(title, company, location_text, link, date, url))
+                                new_jobs_count += 1
                                 if len(jobs) >= max_jobs:
                                     break
                         except Exception as e:
                             logger.error(f"Error processing job: {str(e)}")
+
+                    # Если не найдено новых вакансий, прерываем цикл
+                    if new_jobs_count == 0:
+                        logger.info("No new jobs found, ending scraping")
+                        break
+
                     start += ScraperConfig.JOBS_PER_PAGE
+                else:
+                    logger.info("No job cards found, ending scraping")
+                    break
+            else:
+                logger.error(f"Failed to fetch page for start={start}")
+
             time.sleep(random.uniform(ScraperConfig.MIN_DELAY, ScraperConfig.MAX_DELAY))
+
         return jobs[:max_jobs]
 
 
