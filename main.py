@@ -22,6 +22,30 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Конфигурация Indeed API
+INDEED_API_CONFIG = {
+    "api_url": "https://apis.indeed.com/graphql",
+    "base_url": "https://www.indeed.com",
+    "api_key": "161092c2017b5bbab13edb12461a62d5a833871e7cad6d9d475304573de67ac8",
+    "headers": {
+        "Host": "apis.indeed.com",
+        "content-type": "application/json",
+        "indeed-api-key": "161092c2017b5bbab13edb12461a62d5a833871e7cad6d9d475304573de67ac8",
+        "accept": "application/json",
+        "indeed-locale": "en-US",
+        "accept-language": "en-US,en;q=0.9",
+        "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Indeed App 193.1",
+        "indeed-app-info": "appv=193.1; appid=com.indeed.jobsearch; osv=16.6.1; os=ios; dtype=phone",
+    },
+    "proxies": [
+        "56CxUX:ECCxX7@168.81.237.70:8000",
+        "56CxUX:ECCxX7@168.81.236.178:8000",
+    ],
+    "request_delay": 2,
+    "max_per_page": 100,
+    "default_limit": 1000
+}
+
 
 # Модели данных
 @dataclass
@@ -31,7 +55,8 @@ class JobData:
     location: str
     job_link: str
     posted_date: str
-    url: str
+    platform: str
+    url: str = ""
 
 
 class ScraperConfig:
@@ -66,8 +91,7 @@ class LinkedInScraper:
 
     def _init_proxies(self) -> List[Dict[str, str]]:
         proxy_list = [
-"jeCqBL:Ft5S0x@163.198.234.169:8000",
-"jeCqBL:Ft5S0x@163.198.233.21:8000",
+            "9Y8zZk:rfYg29@168.81.239.68:8000"
         ]
         return [{"http": f"http://{proxy}", "https": f"http://{proxy}"} for proxy in proxy_list]
 
@@ -133,7 +157,7 @@ class LinkedInScraper:
 
                             if link not in seen_urls:
                                 seen_urls.add(link)
-                                jobs.append(JobData(title, company, location_text, link, date, url))
+                                jobs.append(JobData(title, company, location_text, link, date, "linkedin", url))
                                 new_jobs_count += 1
                                 if len(jobs) >= max_jobs:
                                     break
@@ -156,11 +180,147 @@ class LinkedInScraper:
 
         return jobs[:max_jobs]
 
+class IndeedScraper:
+    def __init__(self):
+        self.session = requests.Session()
+        self.proxies = self._prepare_proxies()
+
+    def _prepare_proxies(self) -> List[Dict]:
+        proxies = []
+        for proxy in INDEED_API_CONFIG["proxies"]:
+            if "@" in proxy:
+                auth, host = proxy.split("@")
+                proxies.append({
+                    "http": f"http://{auth}@{host}",
+                    "https": f"http://{auth}@{host}"
+                })
+        return proxies
+
+    def _build_query(self, search_term: str, cursor: Optional[str], limit: int) -> str:
+        what = f'what: "{search_term}"' if search_term else ""
+        cursor_part = f'cursor: "{cursor}"' if cursor else ""
+
+        return f"""
+        query GetJobData {{
+            jobSearch(
+                {what}
+                limit: {limit}
+                {cursor_part}
+                sort: RELEVANCE
+            ) {{
+                pageInfo {{
+                    nextCursor
+                }}
+                results {{
+                    trackingKey
+                    job {{
+                        key
+                        title
+                        datePublished
+                        location {{
+                            countryName
+                            countryCode
+                            admin1Code
+                            city
+                            postalCode
+                            streetAddress
+                            formatted {{
+                                short
+                                long
+                            }}
+                        }}
+                        employer {{
+                            name
+                        }}
+                    }}
+                }}
+            }}
+        }}
+        """
+
+    def _make_request(self, query: str) -> Optional[Dict]:
+        try:
+            proxy = random.choice(self.proxies) if self.proxies else None
+            response = self.session.post(
+                INDEED_API_CONFIG["api_url"],
+                headers=INDEED_API_CONFIG["headers"],
+                json={"query": query},
+                proxies=proxy,
+                timeout=30
+            )
+            return response.json() if response.ok else None
+        except Exception as e:
+            logger.error(f"Error making request to Indeed API: {str(e)}")
+            return None
+
+    def _parse_response(self, response: Dict, search_term: str, search_location: str) -> tuple:
+        if not response or "data" not in response:
+            return [], None
+
+        data = response["data"].get("jobSearch", {})
+        results = data.get("results", [])
+        next_cursor = data.get("pageInfo", {}).get("nextCursor")
+
+        jobs = []
+        for result in results:
+            job_data = result.get("job", {})
+            if not job_data:
+                continue
+
+            # Обработка локации
+            location_data = job_data.get("location", {})
+            job_location = location_data.get("formatted", {}).get("long", "")
+            if not job_location:
+                job_location_parts = [
+                    location_data.get("city", ""),
+                    location_data.get("admin1Code", ""),
+                    location_data.get("countryCode", "")
+                ]
+                job_location = ", ".join(filter(None, job_location_parts))
+
+            # Обработка даты
+            timestamp = job_data.get("datePublished")
+            date_posted = datetime.fromtimestamp(timestamp / 1000).strftime("%Y-%m-%d") if timestamp else None
+
+            jobs.append(JobData(
+                title=job_data.get("title", ""),
+                company=job_data.get("employer", {}).get("name", ""),
+                location=job_location,
+                job_link=f'{INDEED_API_CONFIG["base_url"]}/viewjob?jk={job_data["key"]}',
+                posted_date=date_posted,
+                platform="indeed",
+                url=""
+            ))
+
+        return jobs, next_cursor
+
+    def scrape_jobs(self, search_term: str, location: str = "", limit: int = INDEED_API_CONFIG["default_limit"]) -> List[JobData]:
+        jobs = []
+        cursor = None
+
+        while len(jobs) < limit:
+            query = self._build_query(search_term, cursor,
+                                      min(INDEED_API_CONFIG["max_per_page"], limit - len(jobs)))
+            response = self._make_request(query)
+
+            if not response:
+                break
+
+            new_jobs, cursor = self._parse_response(response, search_term, location)
+            jobs.extend(new_jobs)
+
+            if not cursor or len(jobs) >= limit:
+                break
+
+            time.sleep(INDEED_API_CONFIG["request_delay"])
+
+        return jobs[:limit]
+
 
 # FastAPI приложение
 app = FastAPI(
-    title="LinkedIn Jobs Scraper API",
-    description="API для парсинга вакансий с LinkedIn с возможностью исключения компаний",
+    title="LinkedIn & Indeed Jobs Scraper API",
+    description="API для парсинга вакансий с LinkedIn и Indeed с возможностью исключения компаний",
     version="2.0.0"
 )
 templates = Jinja2Templates(directory="templates")
@@ -179,6 +339,7 @@ class ScrapeRequest(BaseModel):
     location: str = ""
     max_jobs: int = 1000
     exclude_companies: List[str] = []
+    platform: str = "linkedin"  # "linkedin" или "indeed"
 
 
 class ScrapeTask(BaseModel):
@@ -191,6 +352,7 @@ class ScrapeTask(BaseModel):
     location: Optional[str] = None
     max_jobs: Optional[int] = None
     exclude_companies: Optional[List[str]] = None
+    platform: Optional[str] = None
 
 
 class JobResult(BaseModel):
@@ -203,6 +365,7 @@ class JobResult(BaseModel):
     location: str
     job_link: str
     posted_date: str
+    platform: str
 
 
 # Инициализация БД
@@ -220,15 +383,20 @@ def init_db():
                 keywords TEXT,
                 location TEXT,
                 max_jobs INTEGER,
-                exclude_companies TEXT
+                exclude_companies TEXT,
+                platform TEXT
             )""")
 
-        # Проверяем существование столбца exclude_companies
+        # Проверяем существование столбцов
         cursor = conn.cursor()
         cursor.execute("PRAGMA table_info(tasks)")
         columns = [column[1] for column in cursor.fetchall()]
+
         if 'exclude_companies' not in columns:
             cursor.execute("ALTER TABLE tasks ADD COLUMN exclude_companies TEXT")
+
+        if 'platform' not in columns:
+            cursor.execute("ALTER TABLE tasks ADD COLUMN platform TEXT")
 
         conn.commit()
     logger.info("Database initialized")
@@ -253,10 +421,11 @@ def update_task_status(task_id: str, status: str):
     logger.info(f"Updated task {task_id} status to {status}")
 
 
-def save_results(task_id: str, jobs: list, exclude_companies: List[str] = None):
+def save_results(task_id: str, jobs: list, exclude_companies: List[str] = None, platform: str = "linkedin"):
     result_data = {
         "jobs": [j.__dict__ for j in jobs],
-        "exclude_companies": exclude_companies or []
+        "exclude_companies": exclude_companies or [],
+        "platform": platform
     }
 
     with get_db_connection() as conn:
@@ -266,7 +435,8 @@ def save_results(task_id: str, jobs: list, exclude_companies: List[str] = None):
             finished_at=?, 
             result_count=?, 
             result_json=?,
-            exclude_companies=?
+            exclude_companies=?,
+            platform=?
             WHERE id=?""",
             (
                 "completed",
@@ -274,6 +444,7 @@ def save_results(task_id: str, jobs: list, exclude_companies: List[str] = None):
                 len(jobs),
                 json.dumps(result_data),
                 json.dumps(exclude_companies or []),
+                platform,
                 task_id
             )
         )
@@ -314,7 +485,7 @@ async def get_all_job_results(exclude_companies: List[str] = None) -> List[Dict[
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            """SELECT id, created_at, result_json, keywords, location, exclude_companies 
+            """SELECT id, created_at, result_json, keywords, location, exclude_companies, platform 
             FROM tasks WHERE (status = 'completed' OR status = 'partial') 
             AND result_json IS NOT NULL"""
         )
@@ -324,7 +495,7 @@ async def get_all_job_results(exclude_companies: List[str] = None) -> List[Dict[
     seen_links = set()
 
     for task in tasks:
-        task_id, created_at, result_json, search_keywords, search_location, task_exclude = task
+        task_id, created_at, result_json, search_keywords, search_location, task_exclude, platform = task
         try:
             # Получаем исключенные компании для каждой задачи
             task_exclude_list = json.loads(task_exclude) if task_exclude else []
@@ -352,6 +523,7 @@ async def get_all_job_results(exclude_companies: List[str] = None) -> List[Dict[
                 job['created_at'] = created_at
                 job['search_keywords'] = search_keywords
                 job['search_location'] = search_location
+                job['platform'] = platform or data.get('platform', 'linkedin')
                 all_jobs.append(job)
         except json.JSONDecodeError:
             logger.error(f"Invalid JSON in task {task_id}")
@@ -367,8 +539,8 @@ async def create_scrape_task(request: ScrapeRequest, background_tasks: Backgroun
     with get_db_connection() as conn:
         conn.execute(
             """INSERT INTO tasks 
-            (id, status, created_at, keywords, location, max_jobs, exclude_companies) 
-            VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (id, status, created_at, keywords, location, max_jobs, exclude_companies, platform) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 task_id,
                 "pending",
@@ -376,12 +548,13 @@ async def create_scrape_task(request: ScrapeRequest, background_tasks: Backgroun
                 request.keywords,
                 request.location,
                 request.max_jobs,
-                json.dumps(request.exclude_companies)
+                json.dumps(request.exclude_companies),
+                request.platform
             )
         )
         conn.commit()
 
-    logger.info(f"Task created: {task_id}")
+    logger.info(f"Task created: {task_id} for platform: {request.platform}")
     background_tasks.add_task(run_scraper_task, task_id, request)
 
     return {
@@ -394,11 +567,18 @@ async def create_scrape_task(request: ScrapeRequest, background_tasks: Backgroun
 
 async def run_scraper_task(task_id: str, request: ScrapeRequest):
     try:
-        logger.info(f"Starting scraping task {task_id} for {request.keywords} in {request.location}")
+        logger.info(
+            f"Starting scraping task {task_id} for {request.keywords} in {request.location} on {request.platform}")
         update_task_status(task_id, "in_progress")
 
-        scraper = LinkedInScraper()
-        jobs = scraper.scrape_jobs(request.keywords, request.location, request.max_jobs)
+        if request.platform == "linkedin":
+            scraper = LinkedInScraper()
+            jobs = scraper.scrape_jobs(request.keywords, request.location, request.max_jobs)
+        elif request.platform == "indeed":
+            scraper = IndeedScraper()
+            jobs = scraper.scrape_jobs(request.keywords, request.location, request.max_jobs)
+        else:
+            raise ValueError(f"Unsupported platform: {request.platform}")
 
         # Фильтрация по исключенным компаниям
         if request.exclude_companies:
@@ -409,7 +589,7 @@ async def run_scraper_task(task_id: str, request: ScrapeRequest):
                 ]
             ]
 
-        save_results(task_id, jobs, request.exclude_companies)
+        save_results(task_id, jobs, request.exclude_companies, request.platform)
         logger.info(f"Finished scraping task {task_id}, found {len(jobs)} jobs (after excluding companies)")
 
     except Exception as e:
@@ -431,11 +611,12 @@ async def get_all_tasks():
                 "keywords": row[5],
                 "location": row[6],
                 "max_jobs": row[7],
-                "exclude_companies": json.loads(row[8]) if row[8] else []
+                "exclude_companies": json.loads(row[8]) if row[8] else [],
+                "platform": row[9] or "linkedin"
             }
             for row in conn.execute("""
                 SELECT id, status, created_at, finished_at, result_count, 
-                       keywords, location, max_jobs, exclude_companies 
+                       keywords, location, max_jobs, exclude_companies, platform 
                 FROM tasks ORDER BY created_at DESC
             """)
         ]
@@ -446,7 +627,7 @@ async def get_task_status(task_id: str):
     with get_db_connection() as conn:
         if task := conn.execute(
                 """SELECT id, status, created_at, finished_at, result_count, 
-                          keywords, location, max_jobs, exclude_companies 
+                          keywords, location, max_jobs, exclude_companies, platform 
                    FROM tasks WHERE id=?""",
                 (task_id,)
         ).fetchone():
@@ -459,7 +640,8 @@ async def get_task_status(task_id: str):
                 "keywords": task[5],
                 "location": task[6],
                 "max_jobs": task[7],
-                "exclude_companies": json.loads(task[8]) if task[8] else []
+                "exclude_companies": json.loads(task[8]) if task[8] else [],
+                "platform": task[9] or "linkedin"
             }
 
     raise HTTPException(status_code=404, detail="Task not found")
@@ -477,7 +659,7 @@ async def get_all_results_filtered(exclude_companies: str = ""):
 async def get_task_results(task_id: str):
     with get_db_connection() as conn:
         if result := conn.execute(
-                """SELECT result_json, keywords, location 
+                """SELECT result_json, keywords, location, platform 
                    FROM tasks 
                    WHERE id=? AND (status='completed' OR status='partial')""",
                 (task_id,)
@@ -492,7 +674,8 @@ async def get_task_results(task_id: str):
                             **job,
                             'task_id': task_id,
                             'search_keywords': result[1],
-                            'search_location': result[2]
+                            'search_location': result[2],
+                            'platform': result[3] or data.get('platform', 'linkedin')
                         }
                         for job in jobs
                     ]
@@ -518,17 +701,17 @@ async def export_to_excel(exclude_companies: str = ""):
 
     df = pd.DataFrame(jobs)[[
         'task_id', 'created_at', 'search_keywords', 'search_location',
-        'title', 'company', 'location', 'job_link', 'posted_date'
+        'title', 'company', 'location', 'job_link', 'posted_date', 'platform'
     ]]
     df.columns = [
         'Task ID', 'Task Created', 'Search Keywords', 'Search Location',
-        'Job Title', 'Company', 'Job Location', 'Job Link', 'Posted Date'
+        'Job Title', 'Company', 'Job Location', 'Job Link', 'Posted Date', 'Platform'
     ]
 
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df.to_excel(writer, sheet_name='LinkedIn Jobs', index=False)
-        worksheet = writer.sheets['LinkedIn Jobs']
+        df.to_excel(writer, sheet_name='Jobs', index=False)
+        worksheet = writer.sheets['Jobs']
 
         # Форматирование
         url_format = writer.book.add_format({'color': 'blue', 'underline': 1})
@@ -543,6 +726,7 @@ async def export_to_excel(exclude_companies: str = ""):
         worksheet.set_column('G:G', 25)
         worksheet.set_column('H:H', 100, text_format)
         worksheet.set_column('I:I', 15)
+        worksheet.set_column('J:J', 10)
 
         # Добавляем гиперссылки
         for row_num, url in enumerate(df['Job Link'], start=1):
@@ -558,7 +742,7 @@ async def export_to_excel(exclude_companies: str = ""):
     return StreamingResponse(
         output,
         headers={
-            'Content-Disposition': f'attachment; filename="linkedin_jobs_export.xlsx"',
+            'Content-Disposition': f'attachment; filename="jobs_export.xlsx"',
             'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         }
     )
