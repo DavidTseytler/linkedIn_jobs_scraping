@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LinkedIn Jobs Scraper</title>
+    <title>Jobs Scraper - LinkedIn & Indeed</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
@@ -63,16 +63,53 @@
         .clear-tags-btn {
             margin-top: 5px;
         }
+        .platform-badge {
+            font-size: 0.75rem;
+            padding: 0.25rem 0.5rem;
+        }
+        .platform-selector {
+            border-left: 4px solid transparent;
+        }
+        .platform-selector.active {
+            border-left-color: #0d6efd;
+            background-color: #f8f9fa;
+        }
+        .nav-platform {
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
     <div class="container py-4">
-        <h1 class="mb-4"><i class="bi bi-linkedin me-2"></i>LinkedIn Jobs Scraper</h1>
+        <h1 class="mb-4">
+            <i class="bi bi-briefcase me-2"></i>Jobs Scraper
+            <span class="fs-5 text-muted">LinkedIn & Indeed</span>
+        </h1>
+
+        <!-- Platform Selector -->
+        <div class="card mb-4">
+            <div class="card-body py-2">
+                <ul class="nav nav-pills">
+                    <li class="nav-item me-2">
+                        <a class="nav-link nav-platform active" data-platform="linkedin">
+                            <i class="bi bi-linkedin me-1"></i>LinkedIn
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link nav-platform" data-platform="indeed">
+                            <i class="bi bi-building me-1"></i>Indeed
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
 
         <div class="card mb-4">
             <div class="card-body">
                 <h5 class="card-title"><i class="bi bi-plus-circle me-2"></i>New Scraping Task</h5>
                 <form id="scrapeForm">
+                    <input type="hidden" id="platform" name="platform" value="linkedin">
+
                     <div class="mb-3">
                         <label for="keywords" class="form-label"><i class="bi bi-search me-1"></i>Keywords*</label>
                         <input type="text" class="form-control" id="keywords"
@@ -125,6 +162,17 @@
                             Apply
                         </button>
                     </div>
+                    <div class="btn-group me-2">
+                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button"
+                                data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="bi bi-funnel me-1"></i>Platform
+                        </button>
+                        <ul class="dropdown-menu" id="platformFilter">
+                            <li><a class="dropdown-item platform-filter-option" href="#" data-platform="all">All Platforms</a></li>
+                            <li><a class="dropdown-item platform-filter-option" href="#" data-platform="linkedin">LinkedIn Only</a></li>
+                            <li><a class="dropdown-item platform-filter-option" href="#" data-platform="indeed">Indeed Only</a></li>
+                        </ul>
+                    </div>
                     <button id="deleteSelectedBtn" class="btn btn-sm btn-danger me-2" disabled>
                         <i class="bi bi-trash me-1"></i>Delete Selected
                     </button>
@@ -157,6 +205,7 @@
                                 <th class="checkbox-column">
                                     <input type="checkbox" id="selectAll" class="form-check-input select-all-checkbox">
                                 </th>
+                                <th>Platform</th>
                                 <th>Task ID</th>
                                 <th>Created</th>
                                 <th>Search Keywords</th>
@@ -170,9 +219,15 @@
                         </thead>
                         <tbody>
                             {% for job in all_jobs %}
-                            <tr data-job-link="{{ job.job_link }}">
+                            <tr data-job-link="{{ job.job_link }}" data-platform="{{ job.platform or 'linkedin' }}">
                                 <td class="checkbox-column">
                                     <input type="checkbox" class="form-check-input row-checkbox" data-job-link="{{ job.job_link }}">
+                                </td>
+                                <td>
+                                    <span class="badge platform-badge {% if job.platform == 'indeed' %}bg-info{% else %}bg-primary{% endif %}"
+                                          title="{{ job.platform or 'linkedin' | capitalize }}">
+                                        {{ job.platform or 'linkedin' | capitalize }}
+                                    </span>
                                 </td>
                                 <td>{{ job.task_id[:8] }}</td>
                                 <td>{{ job.created_at }}</td>
@@ -247,7 +302,7 @@
                         extend: 'excel',
                         text: '<i class="bi bi-file-excel me-1"></i>Excel',
                         className: 'btn btn-sm btn-success',
-                        title: 'LinkedIn_Jobs_Export',
+                        title: 'Jobs_Export',
                         exportOptions: {
                             columns: ':visible:not(:first-child)'
                         }
@@ -262,10 +317,11 @@
                     },
                     { targets: 1, width: '80px' },
                     { targets: 2, width: '80px' },
-                    { targets: [3, 4], width: '150px' },
-                    { targets: 8, width: '300px' },
+                    { targets: 3, width: '80px' },
+                    { targets: [4, 5], width: '150px' },
+                    { targets: 9, width: '300px' },
                     {
-                        targets: 9,
+                        targets: 10,
                         render: function(data, type, row) {
                             if (type === 'display') {
                                 return data ? new Date(data).toLocaleDateString() : 'N/A';
@@ -277,7 +333,41 @@
                 pageLength: 25,
                 lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
                 responsive: true,
-                order: [[9, 'desc']]
+                order: [[10, 'desc']]
+            });
+
+            // Обработчик выбора платформы
+            $('.nav-platform').click(function() {
+                $('.nav-platform').removeClass('active');
+                $(this).addClass('active');
+
+                const platform = $(this).data('platform');
+                $('#platform').val(platform);
+
+                // Меняем текст кнопки в зависимости от выбранной платформы
+                const submitBtn = $('#scrapeForm button[type="submit"]');
+                if (platform === 'indeed') {
+                    submitBtn.html('<span id="loadingSpinner" class="spinner-border spinner-border-sm me-1"></span><i class="bi bi-play-fill me-1"></i>Scrape Indeed');
+                } else {
+                    submitBtn.html('<span id="loadingSpinner" class="spinner-border spinner-border-sm me-1"></span><i class="bi bi-play-fill me-1"></i>Scrape LinkedIn');
+                }
+            });
+
+            // Фильтрация по платформе
+            $('#platformFilter').on('click', '.platform-filter-option', function(e) {
+                e.preventDefault();
+                const platform = $(this).data('platform');
+
+                $.fn.dataTable.ext.search.push(
+                    function(settings, data, dataIndex) {
+                        if (platform === 'all') return true;
+                        const rowPlatform = table.row(dataIndex).data()[1].toLowerCase();
+                        return rowPlatform.includes(platform.toLowerCase());
+                    }
+                );
+
+                table.draw();
+                $.fn.dataTable.ext.search.pop();
             });
 
             // Обновляем отображение тегов при загрузке страницы
@@ -363,7 +453,7 @@
                     // Фильтрация в DataTables
                     $.fn.dataTable.ext.search.push(
                         function(settings, data, dataIndex) {
-                            const company = data[6].toLowerCase(); // Колонка Company
+                            const company = data[7].toLowerCase(); // Колонка Company
                             return !filterCompanies.some(fc =>
                                 company.includes(fc.toLowerCase())
                             );
@@ -444,7 +534,7 @@
                 $(this).closest('.btn-group').find('button').text('Rows: ' + (length === -1 ? 'All' : length));
             });
 
-            // Обновленный обработчик формы с учетом исключенных компаний
+            // Обновленный обработчик формы с учетом исключенных компаний и платформы
             document.getElementById('scrapeForm').addEventListener('submit', async function(e) {
                 e.preventDefault();
 
@@ -457,6 +547,7 @@
                 const keywords = document.getElementById('keywords').value;
                 const location = document.getElementById('location').value;
                 const maxJobs = document.getElementById('maxJobs').value;
+                const platform = document.getElementById('platform').value;
 
                 try {
                     const response = await fetch('/api/scrape', {
@@ -468,7 +559,8 @@
                             keywords,
                             location,
                             max_jobs: parseInt(maxJobs),
-                            exclude_companies: excludedCompanies
+                            exclude_companies: excludedCompanies,
+                            platform: platform
                         })
                     });
 
