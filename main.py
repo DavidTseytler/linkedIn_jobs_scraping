@@ -702,7 +702,8 @@ class LinkedInScraper:
 
     def _init_proxies(self) -> List[Dict[str, str]]:
         proxy_list = [
-            "9Y8zZk:rfYg29@168.81.239.68:8000"
+            "56CxUX:ECCxX7@168.81.237.70:8000",
+            "56CxUX:ECCxX7@168.81.236.178:8000",
         ]
         return [{"http": f"http://{proxy}", "https": f"http://{proxy}"} for proxy in proxy_list]
 
@@ -1403,3 +1404,4 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
