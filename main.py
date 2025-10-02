@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
-import uuid, json, sqlite3, logging, requests, time, random, os, io
+import uuid, json, sqlite3, logging, requests, time, random, os, io, csv
 from datetime import datetime
 from bs4 import BeautifulSoup
 from urllib.parse import quote
@@ -30,9 +30,11 @@ logger = logging.getLogger(__name__)
 # Конфигурация
 DEFAULT_LIMIT = 1000000
 MAX_PER_PAGE = 100
-PROXY_LIST = [              "SyGzpL:T2Ppj0@45.146.183.18:8000",
-              "SyGzpL:T2Ppj0@45.146.182.159:8000",
-              "SyGzpL:T2Ppj0@45.146.182.31:8000"]
+PROXY_LIST = [
+    "SyGzpL:T2Ppj0@45.146.183.18:8000",
+    "SyGzpL:T2Ppj0@45.146.182.159:8000",
+    "SyGzpL:T2Ppj0@45.146.182.31:8000",
+]
 REQUEST_DELAY = 2
 
 # GraphQL запрос для Indeed (из рабочего кода)
@@ -133,7 +135,6 @@ query GetJobData {{
 }}
 """
 
-
 # Модели данных - расширенная версия для поддержки всех полей из рабочего кода
 @dataclass
 class JobData:
@@ -154,7 +155,6 @@ class JobData:
     task_id: str = ""
     created_at: str = ""
 
-
 class ScraperConfig:
     BASE_URL = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
     JOBS_PER_PAGE = 10
@@ -169,7 +169,6 @@ class ScraperConfig:
         "Accept-Encoding": "gzip, deflate, br",
         "Connection": "keep-alive",
     }
-
 
 def get_country_config(country_input):
     """
@@ -245,7 +244,6 @@ def get_country_config(country_input):
             "country_name": "United States",
             "country_code": "US"
         }
-
 
 class LinkedInScraper:
     def __init__(self):
@@ -357,7 +355,6 @@ class LinkedInScraper:
             time.sleep(random.uniform(ScraperConfig.MIN_DELAY, ScraperConfig.MAX_DELAY))
 
         return jobs[:max_jobs]
-
 
 class IndeedUniversalScraper:
     def __init__(self, country_code=""):
@@ -621,7 +618,6 @@ class IndeedUniversalScraper:
 
         return jobs[:limit]
 
-
 # FastAPI приложение
 app = FastAPI(
     title="LinkedIn & Indeed Jobs Scraper API",
@@ -632,9 +628,6 @@ app = FastAPI(
 # Создаем директорию для шаблонов если ее нет
 os.makedirs("templates", exist_ok=True)
 
-# Создаем базовый HTML шаблон с нужными колонками
-
-        
 templates = Jinja2Templates(directory="templates")
 
 app.add_middleware(
@@ -645,7 +638,6 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
-
 # Модели Pydantic
 class ScrapeRequest(BaseModel):
     keywords: str
@@ -655,7 +647,6 @@ class ScrapeRequest(BaseModel):
     platform: str = "linkedin"
     country_code: str = ""
     hours_old: Optional[int] = None
-
 
 class ScrapeTask(BaseModel):
     id: str
@@ -671,7 +662,6 @@ class ScrapeTask(BaseModel):
     country_code: Optional[str] = None
     hours_old: Optional[int] = None
 
-
 class JobResult(BaseModel):
     task_id: str
     created_at: str
@@ -686,7 +676,6 @@ class JobResult(BaseModel):
     country_name: Optional[str] = ""
     country_code: Optional[str] = ""
     work_attributes: Optional[str] = ""
-
 
 # Инициализация БД
 def init_db():
@@ -710,9 +699,7 @@ def init_db():
         conn.commit()
     logger.info("Database initialized")
 
-
 init_db()
-
 
 @contextmanager
 def get_db_connection():
@@ -722,13 +709,11 @@ def get_db_connection():
     finally:
         conn.close()
 
-
 def update_task_status(task_id: str, status: str):
     with get_db_connection() as conn:
         conn.execute("UPDATE tasks SET status = ? WHERE id = ?", (status, task_id))
         conn.commit()
     logger.info(f"Updated task {task_id} status to {status}")
-
 
 def save_results(task_id: str, jobs: list, exclude_companies: List[str] = None, platform: str = "linkedin",
                  country_code: str = "", hours_old: int = None):
@@ -772,7 +757,6 @@ def save_results(task_id: str, jobs: list, exclude_companies: List[str] = None, 
         conn.commit()
     logger.info(f"Results saved for {task_id}")
 
-
 # API Endpoints
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
@@ -795,7 +779,6 @@ async def read_root(request: Request):
 
     return response
 
-
 async def get_all_job_results(exclude_companies: List[str] = None) -> List[Dict[str, Any]]:
     with get_db_connection() as conn:
         cursor = conn.cursor()
@@ -808,12 +791,19 @@ async def get_all_job_results(exclude_companies: List[str] = None) -> List[Dict[
 
     all_jobs = []
     seen_links = set()
+    
+    # Нормализуем список исключений
+    exclude_list = [company.strip().lower() for company in (exclude_companies or []) if company.strip()]
 
     for task in tasks:
         task_id, created_at, result_json, search_keywords, search_location, task_exclude, platform, country_code, hours_old = task
         try:
+            # Получаем исключения из задачи
             task_exclude_list = json.loads(task_exclude) if task_exclude else []
-            combined_exclude = list(set((exclude_companies or []) + task_exclude_list))
+            task_exclude_normalized = [company.strip().lower() for company in task_exclude_list if company.strip()]
+            
+            # Объединяем исключения из запроса и задачи
+            combined_exclude = list(set(exclude_list + task_exclude_normalized))
 
             data = json.loads(result_json)
             jobs = data.get("jobs", [])
@@ -827,12 +817,12 @@ async def get_all_job_results(exclude_companies: List[str] = None) -> List[Dict[
                     continue
                 seen_links.add(full_link)
 
-                if combined_exclude and job.get('company', '').lower() in [
-                    c.lower() for c in combined_exclude
-                ]:
+                # Простая и надежная фильтрация
+                company_name = job.get('company', '').lower().strip()
+                if combined_exclude and any(excluded_company in company_name for excluded_company in combined_exclude):
                     continue
 
-                # Ensure all required fields are present
+                # Заполняем обязательные поля
                 job['task_id'] = job.get('task_id', task_id)
                 job['created_at'] = job.get('created_at', created_at)
                 job['search_keywords'] = job.get('search_keywords', search_keywords)
@@ -842,11 +832,13 @@ async def get_all_job_results(exclude_companies: List[str] = None) -> List[Dict[
                 job['hours_old'] = hours_old or data.get('hours_old')
 
                 all_jobs.append(job)
+                
         except json.JSONDecodeError:
             logger.error(f"Invalid JSON in task {task_id}")
+        except Exception as e:
+            logger.error(f"Error processing task {task_id}: {e}")
 
     return all_jobs
-
 
 @app.post("/api/scrape", response_model=ScrapeTask)
 async def create_scrape_task(request: ScrapeRequest, background_tasks: BackgroundTasks):
@@ -882,7 +874,6 @@ async def create_scrape_task(request: ScrapeRequest, background_tasks: Backgroun
         "created_at": created_at,
         **request.dict()
     }
-
 
 async def run_scraper_task(task_id: str, request: ScrapeRequest):
     try:
@@ -931,30 +922,27 @@ async def run_scraper_task(task_id: str, request: ScrapeRequest):
         else:
             raise ValueError(f"Unsupported platform: {request.platform}")
 
-        if request.exclude_companies:
-            jobs = [
-                job for job in jobs
-                if job.company.lower() not in [
-                    c.lower() for c in request.exclude_companies
-                ]
-            ]
+        # ✅ УБРАНА ФИЛЬТРАЦИЯ ПРИ СОХРАНЕНИИ - сохраняем все вакансии
+        # Фильтрация будет происходить только при получении данных
 
         # Сохраняем с определенным country_code
         save_results(task_id, jobs, request.exclude_companies, request.platform, country_code,
                      request.hours_old)
-        logger.info(f"Finished scraping task {task_id}, found {len(jobs)} jobs (after excluding companies)")
+        logger.info(f"Finished scraping task {task_id}, found {len(jobs)} jobs")
 
     except Exception as e:
         logger.error(f"Error in task {task_id}: {str(e)}", exc_info=True)
         update_task_status(task_id, "failed")
         raise
 
-
 @app.get("/api/jobs")
 async def get_jobs(exclude_companies: str = ""):
     """API endpoint to get all jobs"""
     exclude_list = [c.strip() for c in exclude_companies.split(",") if c.strip()]
     jobs = await get_all_job_results(exclude_list)
+    
+    # Логирование для отладки
+    logger.info(f"API /jobs called with exclude_companies: {exclude_list}, returned {len(jobs)} jobs")
 
     # Filter to only include required columns
     filtered_jobs = []
@@ -973,7 +961,6 @@ async def get_jobs(exclude_companies: str = ""):
         })
 
     return filtered_jobs
-
 
 @app.get("/api/tasks/{task_id}")
 async def get_task_status(task_id: str):
@@ -1000,11 +987,11 @@ async def get_task_status(task_id: str):
         "hours_old": task[12]
     }
 
-
 @app.get("/api/export/excel")
-async def export_to_excel():
+async def export_to_excel(exclude_companies: str = ""):
     """Export jobs to Excel"""
-    jobs = await get_all_job_results()
+    exclude_list = [c.strip() for c in exclude_companies.split(",") if c.strip()]
+    jobs = await get_all_job_results(exclude_list)
 
     if not jobs:
         raise HTTPException(status_code=404, detail="No jobs found")
@@ -1043,11 +1030,11 @@ async def export_to_excel():
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
 
-
 @app.get("/api/export/csv")
-async def export_to_csv():
+async def export_to_csv(exclude_companies: str = ""):
     """Export jobs to CSV"""
-    jobs = await get_all_job_results()
+    exclude_list = [c.strip() for c in exclude_companies.split(",") if c.strip()]
+    jobs = await get_all_job_results(exclude_list)
 
     if not jobs:
         raise HTTPException(status_code=404, detail="No jobs found")
@@ -1088,7 +1075,6 @@ async def export_to_csv():
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
-
 
 @app.get("/api/test-indeed")
 async def test_indeed(
@@ -1131,10 +1117,6 @@ async def test_indeed(
             "location": location
         }
 
-
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
-
