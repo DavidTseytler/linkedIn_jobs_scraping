@@ -30,7 +30,9 @@ logger = logging.getLogger(__name__)
 # Конфигурация
 DEFAULT_LIMIT = 1000000
 MAX_PER_PAGE = 100
-PROXY_LIST = ["4vJkDS:vAELf6@163.198.235.139:8000", "4vJkDS:vAELf6@163.198.235.4:8000"]
+PROXY_LIST = [              "SyGzpL:T2Ppj0@45.146.183.18:8000",
+              "SyGzpL:T2Ppj0@45.146.182.159:8000",
+              "SyGzpL:T2Ppj0@45.146.182.31:8000"]
 REQUEST_DELAY = 2
 
 # GraphQL запрос для Indeed (из рабочего кода)
@@ -1134,4 +1136,5 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
