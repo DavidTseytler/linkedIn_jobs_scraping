@@ -28,7 +28,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Конфигурация
-DEFAULT_LIMIT = 1000
+DEFAULT_LIMIT = 1000000
 MAX_PER_PAGE = 100
 PROXY_LIST = ["4vJkDS:vAELf6@163.198.235.139:8000", "4vJkDS:vAELf6@163.198.235.4:8000"]
 REQUEST_DELAY = 2
@@ -1134,3 +1134,4 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
