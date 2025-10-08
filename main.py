@@ -31,9 +31,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_LIMIT = 1000000
 MAX_PER_PAGE = 100
 PROXY_LIST = [
-    "SyGzpL:T2Ppj0@45.146.183.18:8000",
-    "SyGzpL:T2Ppj0@45.146.182.159:8000",
-    "SyGzpL:T2Ppj0@45.146.182.31:8000",
+"u5gKuw:yowQmZ@45.146.183.221:8000",
+"u5gKuw:yowQmZ@45.146.183.154:8000",
 ]
 REQUEST_DELAY = 2
 
@@ -1120,3 +1119,4 @@ async def test_indeed(
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
