@@ -31,15 +31,13 @@ logger = logging.getLogger(__name__)
 DEFAULT_LIMIT = 1000000
 MAX_PER_PAGE = 100
 PROXY_LIST = [
-"pNkr0G:hfJTPC@168.90.199.27:8000",
-"2up2xQ:oUnD5s@196.18.12.7:8000",
-"2up2xQ:oUnD5s@196.16.244.121:8000",
-"yetmcE:D6KaGb@200.10.36.50:8000",
-"yetmcE:D6KaGb@200.10.36.114:8000",
-"yetmcE:D6KaGb@138.0.243.149:8000",
-"4me6g5:pNJR6z@196.17.170.143:8000",
-"4me6g5:pNJR6z@196.17.169.23:8000",
-"4me6g5:pNJR6z@196.18.167.123:8000",
+"RzNSjR:RePwao@172.245.198.72:8000:RzNSjR:RePwao",
+"RzNSjR:RePwao@200.10.39.158:8000:RzNSjR:RePwao",
+"C34gHr:CscNAv@163.198.234.126:8000:C34gHr:CscNAv",
+"C34gHr:CscNAv@163.198.235.171:8000:C34gHr:CscNAv",
+"C34gHr:CscNAv@163.198.232.199:8000:C34gHr:CscNAv",
+"jNxBYh:2wD3RW@186.65.122.139:8000:jNxBYh:2wD3RW",
+"jNxBYh:2wD3RW@186.65.122.8:8000:jNxBYh:2wD3RW"
 ]
 REQUEST_DELAY = 2
 
@@ -1126,5 +1124,6 @@ async def test_indeed(
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
